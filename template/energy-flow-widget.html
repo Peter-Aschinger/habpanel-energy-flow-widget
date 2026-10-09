@@ -1,0 +1,718 @@
+<style>
+.energy-dashboard {
+  --bg: #15191d;
+  --card: #20272d;
+  --card-line: #3c474f;
+  --text: #ffffff;
+  --label: #b4c4d0;
+  --pv: #f5a623;
+  --house: #71cfff;
+  --grid-in: #ff7a6b;
+  --grid-out: #5fd0c5;
+  --batt-charge: #6fd17b;
+  --batt-discharge: #b48ef0;
+  --neutral: #9eb2c1;
+
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Arial, Helvetica, sans-serif;
+  overflow: hidden;          /* kein eigener Scrollbereich: das Dashboard scrollt (Kachel hoch genug ziehen) */
+  touch-action: pan-y;       /* senkrechtes Wischen sofort an den Browser geben, ohne Verzögerung */
+  box-sizing: border-box;
+}
+
+/* Optional (Einstellung scrollInside): Widget scrollt in sich selbst */
+.energy-dashboard.inner-scroll { overflow-y: auto; }
+
+.energy-title {
+  text-align: center;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0.8px;
+  padding: 4px 0 0 0;
+}
+
+/* Breite bestimmt die Größe: SVG nimmt immer 100 % der Breite */
+.energy-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Zwei übereinanderliegende Ebenen (gleiche Größe): hinten Pfeile, vorn Karten/Texte */
+.stage { position: relative; width: 100%; container-type: inline-size; contain: paint; }
+.layer-front { position: relative; will-change: transform; transform: translateZ(0); }
+
+.energy-dashboard text { font-variant-numeric: tabular-nums; text-anchor: middle; }
+.energy-dashboard .end { text-anchor: end; }
+.energy-dashboard .start { text-anchor: start; }
+
+/* Karten (leicht transparent, damit die Flow-Pfeile durchscheinen) */
+.card { fill: var(--card); fill-opacity: 0.42; stroke: var(--card-line); stroke-width: 2; }
+
+/* Texte */
+.title { fill: var(--label); font-size: 16px; font-weight: 600; letter-spacing: 1.2px; }
+.label { fill: var(--label); font-size: 14px; font-weight: 500; letter-spacing: 1px; }
+.unit  { font-size: 0.5em; font-weight: 500; fill: var(--label); }
+
+.big   { font-size: 48px; font-weight: bold; }
+.mid   { font-size: 34px; font-weight: bold; }
+.small { font-size: 24px; font-weight: bold; }
+.yday  { opacity: 0.65; }
+.month-last { font-size: 20px; }
+/* Einheit neben den Monats-/Jahreszahlen (eigener Text, damit die Zahlen exakt rechtsbündig stehen) */
+.unit-col { fill: var(--label); font-size: 12px; font-weight: 500; }
+.unit-col-last { font-size: 10px; }
+
+/* Farben: eine Farbe pro Größe */
+.c-pv     { fill: var(--pv); }
+.c-house  { fill: var(--house); }
+.c-in     { fill: var(--grid-in); }
+.c-out    { fill: var(--grid-out); }
+.c-charge { fill: var(--batt-charge); }
+.c-disch  { fill: var(--batt-discharge); }
+.c-neutral{ fill: var(--neutral); }
+.c-white  { fill: var(--text); }
+.c-red    { fill: #e85b5b; }
+.c-yellow { fill: #f5c542; }
+
+/* Sonne */
+.sun-on  { stroke: var(--pv); fill: var(--pv); }
+.sun-off { stroke: #626c73;   fill: #626c73; }
+
+/* Akku */
+.soc-ring-bg { fill: none; stroke: #354047; stroke-width: 9; }
+.soc-ring { fill: none; stroke-width: 9; stroke-linecap: round;
+            transform: rotate(-90deg); transform-origin: 97px 410px; }
+.soc-min-tick { stroke: #ffffff; stroke-width: 2.5; stroke-linecap: round; opacity: 0.85; }
+.label-val { fill: var(--text); font-weight: bold; letter-spacing: 0; }
+.soc-btn { cursor: pointer; }
+.soc-btn .btn-bg  { fill: #2a343b; stroke: var(--card-line); stroke-width: 1.5; }
+.soc-btn .btn-hit { fill: transparent; }
+.soc-btn .btn-sign { fill: var(--text); font-size: 20px; font-weight: bold; }
+.soc-btn:active .btn-bg { fill: #46535c; }
+.nodata { opacity: 0.45; }
+
+/* Flow-Pfeile: Farbe pro Flussrichtung */
+.f-pv     { stroke: var(--batt-charge); }
+.f-charge { stroke: var(--batt-charge); }
+.f-disch  { stroke: var(--batt-discharge); }
+.f-in     { stroke: var(--grid-in); }
+.f-out    { stroke: var(--grid-out); }
+
+.arrow { fill: none; stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; }
+
+.divider { stroke: #3a454d; stroke-width: 2; }
+
+/* Füllstand-Hintergrund (wie bei Victron): die Kachel füllt sich von unten nach oben mit Ampel-Verlauf */
+.frame { stroke: none; fill-opacity: 0.32; }
+.frame-pv       { fill: url(#g-good-pv);    clip-path: url(#clip-pv); }
+.frame-akku     { fill: url(#g-good-akku);  clip-path: url(#clip-akku); }
+.frame-netz-in  { fill: url(#g-bad-netz);   clip-path: url(#clip-netz-in); }
+.frame-netz-out { fill: var(--grid-out);    clip-path: url(#clip-netz-out); }
+.bar-bg   { fill: #354047; }
+.bar-fill { fill: var(--batt-charge); }
+
+/* Energie-Symbole: einheitliche Größe, Strichstärke und Ausrichtung */
+.energy-icon {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.energy-icon-house { stroke: var(--house); }
+.energy-icon-battery { stroke: var(--batt-charge); }
+.energy-icon-grid { stroke: var(--grid-in); }
+.energy-icon .icon-fill {
+  stroke: none;
+  fill: currentColor;
+}
+
+/* Glow auf Schrift, Sonne und SOC-Ring */
+.big, .mid       { filter: url(#glow-lg); }
+.small           { filter: url(#glow-sm); }
+.sun-on          { filter: url(#glow-lg); }
+.soc-ring        { filter: url(#glow-sm); }
+
+
+/* Flow-Pfeile als HTML-Elemente mit CSS-Animation (laufen unabhängig vom Haupt-Thread).
+   Maße in cqw: 1 SVG-Einheit (viewBox 400 breit) = 0,25 cqw der Breite von .stage */
+.arrows-html { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.arrow-h { position: absolute; left: 0; top: 0; width: 0; height: 0; opacity: 0;
+            animation-timing-function: linear; animation-iteration-count: infinite;
+            will-change: transform, opacity; }
+.arrow-h svg { position: absolute; left: -2cqw; top: -2.25cqw; width: 4cqw; height: 4.5cqw; overflow: visible; }
+.fl-pv { animation-name: fl-pv; }
+.fl-ch { animation-name: fl-ch; }
+.fl-di { animation-name: fl-di; }
+.fl-ex { animation-name: fl-ex; }
+.fl-im { animation-name: fl-im; }
+@keyframes fl-pv {
+  0.00% { transform: translate(50.000cqw, 17.500cqw) rotate(90.0deg); opacity: 0.00; }
+  6.25% { transform: translate(50.000cqw, 20.050cqw) rotate(90.0deg); opacity: 0.42; }
+  12.50% { transform: translate(50.000cqw, 22.706cqw) rotate(90.0deg); opacity: 0.83; }
+  18.75% { transform: translate(50.000cqw, 25.363cqw) rotate(90.0deg); opacity: 1.00; }
+  25.00% { transform: translate(50.000cqw, 28.019cqw) rotate(90.0deg); opacity: 1.00; }
+  31.25% { transform: translate(50.000cqw, 30.675cqw) rotate(90.0deg); opacity: 1.00; }
+  37.50% { transform: translate(50.000cqw, 33.331cqw) rotate(90.0deg); opacity: 1.00; }
+  43.75% { transform: translate(50.000cqw, 35.987cqw) rotate(90.0deg); opacity: 1.00; }
+  50.00% { transform: translate(50.000cqw, 38.644cqw) rotate(90.0deg); opacity: 1.00; }
+  56.25% { transform: translate(50.000cqw, 41.300cqw) rotate(90.0deg); opacity: 1.00; }
+  62.50% { transform: translate(50.000cqw, 43.956cqw) rotate(90.0deg); opacity: 1.00; }
+  68.75% { transform: translate(50.000cqw, 46.612cqw) rotate(90.0deg); opacity: 1.00; }
+  75.00% { transform: translate(50.000cqw, 49.269cqw) rotate(90.0deg); opacity: 1.00; }
+  81.25% { transform: translate(50.000cqw, 51.925cqw) rotate(90.0deg); opacity: 1.00; }
+  87.50% { transform: translate(50.000cqw, 54.581cqw) rotate(90.0deg); opacity: 0.83; }
+  93.75% { transform: translate(50.000cqw, 57.237cqw) rotate(90.0deg); opacity: 0.42; }
+  100.00% { transform: translate(50.000cqw, 59.894cqw) rotate(90.0deg); opacity: 0.00; }
+}
+@keyframes fl-ch {
+  0.00% { transform: translate(50.000cqw, 60.000cqw) rotate(90.6deg); opacity: 0.00; }
+  6.25% { transform: translate(49.775cqw, 63.126cqw) rotate(98.5deg); opacity: 0.42; }
+  12.50% { transform: translate(49.017cqw, 66.291cqw) rotate(108.6deg); opacity: 0.83; }
+  18.75% { transform: translate(47.740cqw, 69.210cqw) rotate(118.6deg); opacity: 1.00; }
+  25.00% { transform: translate(45.904cqw, 72.009cqw) rotate(127.6deg); opacity: 1.00; }
+  31.25% { transform: translate(43.777cqw, 74.449cqw) rotate(134.1deg); opacity: 1.00; }
+  37.50% { transform: translate(41.489cqw, 76.632cqw) rotate(138.2deg); opacity: 1.00; }
+  43.75% { transform: translate(39.050cqw, 78.723cqw) rotate(140.2deg); opacity: 1.00; }
+  50.00% { transform: translate(36.546cqw, 80.792cqw) rotate(140.3deg); opacity: 1.00; }
+  56.25% { transform: translate(34.061cqw, 82.908cqw) rotate(138.5deg); opacity: 1.00; }
+  62.50% { transform: translate(31.681cqw, 85.143cqw) rotate(134.8deg); opacity: 1.00; }
+  68.75% { transform: translate(29.570cqw, 87.468cqw) rotate(129.4deg); opacity: 1.00; }
+  75.00% { transform: translate(27.642cqw, 90.137cqw) rotate(122.0deg); opacity: 1.00; }
+  81.25% { transform: translate(26.122cqw, 93.009cqw) rotate(113.6deg); opacity: 1.00; }
+  87.50% { transform: translate(25.079cqw, 95.971cqw) rotate(105.2deg); opacity: 0.83; }
+  93.75% { transform: translate(24.455cqw, 99.136cqw) rotate(97.2deg); opacity: 0.42; }
+  100.00% { transform: translate(24.250cqw, 102.332cqw) rotate(90.7deg); opacity: 0.00; }
+}
+@keyframes fl-di {
+  0.00% { transform: translate(24.250cqw, 102.500cqw) rotate(-89.5deg); opacity: 0.00; }
+  6.25% { transform: translate(24.437cqw, 99.288cqw) rotate(-83.2deg); opacity: 0.42; }
+  12.50% { transform: translate(25.042cqw, 96.107cqw) rotate(-75.1deg); opacity: 0.83; }
+  18.75% { transform: translate(26.069cqw, 93.131cqw) rotate(-66.7deg); opacity: 1.00; }
+  25.00% { transform: translate(27.574cqw, 90.246cqw) rotate(-58.3deg); opacity: 1.00; }
+  31.25% { transform: translate(29.491cqw, 87.565cqw) rotate(-50.9deg); opacity: 1.00; }
+  37.50% { transform: translate(31.593cqw, 85.232cqw) rotate(-45.4deg); opacity: 1.00; }
+  43.75% { transform: translate(33.967cqw, 82.992cqw) rotate(-41.6deg); opacity: 1.00; }
+  50.00% { transform: translate(36.449cqw, 80.872cqw) rotate(-39.7deg); opacity: 1.00; }
+  56.25% { transform: translate(38.954cqw, 78.802cqw) rotate(-39.7deg); opacity: 1.00; }
+  62.50% { transform: translate(41.397cqw, 76.714cqw) rotate(-41.7deg); opacity: 1.00; }
+  68.75% { transform: translate(43.693cqw, 74.535cqw) rotate(-45.7deg); opacity: 1.00; }
+  75.00% { transform: translate(45.831cqw, 72.103cqw) rotate(-52.1deg); opacity: 1.00; }
+  81.25% { transform: translate(47.682cqw, 69.316cqw) rotate(-61.1deg); opacity: 1.00; }
+  87.50% { transform: translate(48.977cqw, 66.409cqw) rotate(-71.0deg); opacity: 0.83; }
+  93.75% { transform: translate(49.754cqw, 63.260cqw) rotate(-81.1deg); opacity: 0.42; }
+  100.00% { transform: translate(50.000cqw, 60.150cqw) rotate(-89.3deg); opacity: 0.00; }
+}
+@keyframes fl-ex {
+  0.00% { transform: translate(50.000cqw, 60.000cqw) rotate(89.4deg); opacity: 0.00; }
+  6.25% { transform: translate(50.205cqw, 62.990cqw) rotate(81.9deg); opacity: 0.42; }
+  12.50% { transform: translate(50.904cqw, 66.048cqw) rotate(72.2deg); opacity: 0.83; }
+  18.75% { transform: translate(52.090cqw, 68.877cqw) rotate(62.4deg); opacity: 1.00; }
+  25.00% { transform: translate(53.738cqw, 71.497cqw) rotate(53.5deg); opacity: 1.00; }
+  31.25% { transform: translate(55.807cqw, 73.940cqw) rotate(46.3deg); opacity: 1.00; }
+  37.50% { transform: translate(57.967cqw, 76.012cqw) rotate(41.7deg); opacity: 1.00; }
+  43.75% { transform: translate(60.379cqw, 78.039cqw) rotate(38.8deg); opacity: 1.00; }
+  50.00% { transform: translate(62.778cqw, 79.925cqw) rotate(37.8deg); opacity: 1.00; }
+  56.25% { transform: translate(65.276cqw, 81.885cqw) rotate(38.7deg); opacity: 1.00; }
+  62.50% { transform: translate(67.693cqw, 83.908cqw) rotate(41.5deg); opacity: 1.00; }
+  68.75% { transform: translate(69.861cqw, 85.974cqw) rotate(46.1deg); opacity: 1.00; }
+  75.00% { transform: translate(71.942cqw, 88.408cqw) rotate(53.2deg); opacity: 1.00; }
+  81.25% { transform: translate(73.604cqw, 91.017cqw) rotate(62.0deg); opacity: 1.00; }
+  87.50% { transform: translate(74.807cqw, 93.833cqw) rotate(71.8deg); opacity: 0.83; }
+  93.75% { transform: translate(75.525cqw, 96.875cqw) rotate(81.5deg); opacity: 0.42; }
+  100.00% { transform: translate(75.750cqw, 99.850cqw) rotate(89.3deg); opacity: 0.00; }
+}
+@keyframes fl-im {
+  0.00% { transform: translate(75.750cqw, 100.000cqw) rotate(-90.6deg); opacity: 0.00; }
+  6.25% { transform: translate(75.545cqw, 97.010cqw) rotate(-98.1deg); opacity: 0.42; }
+  12.50% { transform: translate(74.846cqw, 93.952cqw) rotate(-107.8deg); opacity: 0.83; }
+  18.75% { transform: translate(73.660cqw, 91.123cqw) rotate(-117.6deg); opacity: 1.00; }
+  25.00% { transform: translate(72.012cqw, 88.503cqw) rotate(-126.5deg); opacity: 1.00; }
+  31.25% { transform: translate(69.943cqw, 86.060cqw) rotate(-133.7deg); opacity: 1.00; }
+  37.50% { transform: translate(67.783cqw, 83.988cqw) rotate(-138.3deg); opacity: 1.00; }
+  43.75% { transform: translate(65.371cqw, 81.961cqw) rotate(-141.2deg); opacity: 1.00; }
+  50.00% { transform: translate(62.875cqw, 80.000cqw) rotate(-142.2deg); opacity: 1.00; }
+  56.25% { transform: translate(60.474cqw, 78.115cqw) rotate(-141.3deg); opacity: 1.00; }
+  62.50% { transform: translate(58.057cqw, 76.092cqw) rotate(-138.5deg); opacity: 1.00; }
+  68.75% { transform: translate(55.889cqw, 74.026cqw) rotate(-133.9deg); opacity: 1.00; }
+  75.00% { transform: translate(53.808cqw, 71.592cqw) rotate(-126.8deg); opacity: 1.00; }
+  81.25% { transform: translate(52.146cqw, 68.983cqw) rotate(-118.0deg); opacity: 1.00; }
+  87.50% { transform: translate(50.943cqw, 66.167cqw) rotate(-108.2deg); opacity: 0.83; }
+  93.75% { transform: translate(50.225cqw, 63.125cqw) rotate(-98.5deg); opacity: 0.42; }
+  100.00% { transform: translate(50.000cqw, 60.150cqw) rotate(-90.7deg); opacity: 0.00; }
+}
+
+
+/* PV-Verlauf (openHAB-Chart-Bild) im Hintergrund der PV-Kachel, Darstellung wie bei Victron:
+   Filter #pv-area holt nur die rote Kurve aus dem Bild, füllt die Fläche darunter und färbt beides neu.
+   Farben hier anpassen: */
+.pv-chart      { filter: url(#pv-area); }
+.pv-area-fill  { flood-color: #7f93a3; flood-opacity: 0.20; }   /* neutrales Blaugrau, stört die farbigen Zahlen nicht */
+.pv-area-line  { flood-color: #a9bccb; flood-opacity: 0.60; }
+/* Netz-Verlauf (gleiches Prinzip wie PV) */
+.grid-chart      { filter: url(#grid-area); }
+.grid-area-fill  { flood-color: #7f93a3; flood-opacity: 0.20; }
+.grid-area-line  { flood-color: #a9bccb; flood-opacity: 0.60; }
+.grid-chart-clip-card { clip-path: url(#clip-gridchart-card); }
+/* Alternative Victron-Beige: Fläche #d8bd8a / 0.25, Linie #efd9ad / 0.60 */
+.pv-chart-clip-card { clip-path: url(#clip-pvchart-card); }
+.pv-chart-clip-area { clip-path: url(#clip-pvchart-area); }
+</style>
+
+
+<!-- Energy flow widget for HABPanel. All items come from the widget settings (config.<ID>), see the settings table.
+     Items with units are supported: the unit is split off, W/kW, Wh/kWh/MWh are converted. -->
+<div class="energy-dashboard"
+     ng-class="{'inner-scroll': config.scrollInside === true || config.scrollInside == 'true'}"
+     ng-init="spdSlow=6; spdMid=4; spdFast=2.5; spdLo=300; spdHi=1000; spdHy=75; arrowN=4; arrowIdx=[0,1,2,3]; socStep=(+config.socStep || 5); socMinAllowed=(+config.socMinAllowed || 5); socMaxAllowed=(+config.socMaxAllowed || 95); pvMaxW=(+config.pvMaxW || 1500); gridMaxW=(+config.gridMaxW || 3000); battCap=(+config.battCapacity || 7.5); hideM=(config.hideMonth === true || config.hideMonth == 'true'); hideY=(config.hideYear === true || config.hideYear == 'true'); hideC=(config.hideChart === true || config.hideChart == 'true'); hideGC=(config.hideGridChart === true || config.hideGridChart == 'true'); en=(config.language == 'en')">
+
+  <div class="energy-title">{{en ? 'Energy flows' : 'Aktuelle Energieflüsse'}}</div>
+
+  <div class="stage">
+
+    <!-- Hintere Ebene: nur die Flow-Pfeile. Eigene Ebene, damit die Animation nicht
+         die Karten und Texte (Glow-Filter) bei jedem Bild neu zeichnen muss. -->
+    <div class="arrows-html" aria-hidden="true">
+    <!-- ===================== FLOW-PFEILE (hinter den Karten) =====================
+         Tempo nach Leistung: unter spdLo = langsam, bis spdHi = mittel, darüber = schnell
+         (Sekunden pro Durchlauf bzw. Watt; spdHy = Hysterese in W; Anzahl Pfeile: arrowN/arrowIdx; siehe ng-init am Widget-Anfang) -->
+
+    <!-- PV -> Haus -->
+    <div ng-if="((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > 0">
+      <div ng-repeat="d in [lvlPv = (((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdLo - spdHy ? spdSlow : (((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdLo + spdHy ? ((lvlPv == spdSlow || lvlPv == spdMid) ? lvlPv : (((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdLo ? spdSlow : spdMid)) : (((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdHi - spdHy ? spdMid : (((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdHi + spdHy ? ((lvlPv == spdMid || lvlPv == spdFast) ? lvlPv : (((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdHi ? spdMid : spdFast)) : spdFast))))] track by $index">
+        <div ng-repeat="k in arrowIdx" class="arrow-h fl-pv"
+             ng-style="{'animation-duration': d + 's', 'animation-delay': (-d * k / arrowN) + 's'}">
+          <svg viewBox="-8 -9 16 18"><path d="M-7 -8 L3 0 L-7 8" class="arrow f-pv"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Haus -> Akku (laden) -->
+    <div ng-if="((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > 0">
+      <div ng-repeat="d in [lvlCh = (((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdLo - spdHy ? spdSlow : (((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdLo + spdHy ? ((lvlCh == spdSlow || lvlCh == spdMid) ? lvlCh : (((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdLo ? spdSlow : spdMid)) : (((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdHi - spdHy ? spdMid : (((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdHi + spdHy ? ((lvlCh == spdMid || lvlCh == spdFast) ? lvlCh : (((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdHi ? spdMid : spdFast)) : spdFast))))] track by $index">
+        <div ng-repeat="k in arrowIdx" class="arrow-h fl-ch"
+             ng-style="{'animation-duration': d + 's', 'animation-delay': (-d * k / arrowN) + 's'}">
+          <svg viewBox="-8 -9 16 18"><path d="M-7 -8 L3 0 L-7 8" class="arrow f-charge"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Akku -> Haus (entladen) -->
+    <div ng-if="((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < 0">
+      <div ng-repeat="d in [lvlDi = ((-((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) < spdLo - spdHy ? spdSlow : ((-((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) < spdLo + spdHy ? ((lvlDi == spdSlow || lvlDi == spdMid) ? lvlDi : ((-((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) < spdLo ? spdSlow : spdMid)) : ((-((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) < spdHi - spdHy ? spdMid : ((-((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) < spdHi + spdHy ? ((lvlDi == spdMid || lvlDi == spdFast) ? lvlDi : ((-((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) < spdHi ? spdMid : spdFast)) : spdFast))))] track by $index">
+        <div ng-repeat="k in arrowIdx" class="arrow-h fl-di"
+             ng-style="{'animation-duration': d + 's', 'animation-delay': (-d * k / arrowN) + 's'}">
+          <svg viewBox="-8 -9 16 18"><path d="M-7 -8 L3 0 L-7 8" class="arrow f-disch"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Haus -> Netz (Einspeisung) -->
+    <div ng-if="((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < 0">
+      <div ng-repeat="d in [lvlEx = ((-((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) < spdLo - spdHy ? spdSlow : ((-((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) < spdLo + spdHy ? ((lvlEx == spdSlow || lvlEx == spdMid) ? lvlEx : ((-((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) < spdLo ? spdSlow : spdMid)) : ((-((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) < spdHi - spdHy ? spdMid : ((-((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) < spdHi + spdHy ? ((lvlEx == spdMid || lvlEx == spdFast) ? lvlEx : ((-((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) < spdHi ? spdMid : spdFast)) : spdFast))))] track by $index">
+        <div ng-repeat="k in arrowIdx" class="arrow-h fl-ex"
+             ng-style="{'animation-duration': d + 's', 'animation-delay': (-d * k / arrowN) + 's'}">
+          <svg viewBox="-8 -9 16 18"><path d="M-7 -8 L3 0 L-7 8" class="arrow f-out"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Netz -> Haus (Bezug) -->
+    <div ng-if="((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > 0">
+      <div ng-repeat="d in [lvlIm = (((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdLo - spdHy ? spdSlow : (((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdLo + spdHy ? ((lvlIm == spdSlow || lvlIm == spdMid) ? lvlIm : (((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdLo ? spdSlow : spdMid)) : (((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdHi - spdHy ? spdMid : (((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdHi + spdHy ? ((lvlIm == spdMid || lvlIm == spdFast) ? lvlIm : (((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < spdHi ? spdMid : spdFast)) : spdFast))))] track by $index">
+        <div ng-repeat="k in arrowIdx" class="arrow-h fl-im"
+             ng-style="{'animation-duration': d + 's', 'animation-delay': (-d * k / arrowN) + 's'}">
+          <svg viewBox="-8 -9 16 18"><path d="M-7 -8 L3 0 L-7 8" class="arrow f-in"/></svg>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+    <!-- Vordere Ebene: Karten, Rahmen, Texte -->
+    <svg class="energy-svg layer-front" viewBox="0 0 400 1130"
+         ng-attr-view_box="0 0 400 {{588 + (hideM ? 0 : 256) + (hideY ? 0 : 286)}}" preserveAspectRatio="xMidYMin meet">
+
+    <defs>
+      <!-- Glow: unscharfe Kopie der Schrift (gleiche Farbe) hinter der scharfen Schrift -->
+      <filter id="glow-lg" x="-25%" y="-60%" width="150%" height="220%">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="1.6" result="g"/>
+        <feComponentTransfer in="g" result="b"><feFuncA type="linear" slope="0.55"/></feComponentTransfer>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="glow-sm" x="-25%" y="-60%" width="150%" height="220%">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="1.1" result="g"/>
+        <feComponentTransfer in="g" result="b"><feFuncA type="linear" slope="0.55"/></feComponentTransfer>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+
+      <!-- Ampel-Verläufe für die Füllung (unten -> oben) -->
+      <!-- PV und Akku: viel = gut (rot -> gelb -> grün) -->
+      <linearGradient id="g-good-pv" gradientUnits="userSpaceOnUse" x1="0" y1="144" x2="0" y2="6">
+        <stop offset="0" stop-color="#e85b5b"/><stop offset="0.5" stop-color="#f5c542"/><stop offset="1" stop-color="#6fd17b"/>
+      </linearGradient>
+      <linearGradient id="g-good-akku" gradientUnits="userSpaceOnUse" x1="0" y1="578" x2="0" y2="326">
+        <stop offset="0" stop-color="#e85b5b"/><stop offset="0.5" stop-color="#f5c542"/><stop offset="1" stop-color="#6fd17b"/>
+      </linearGradient>
+      <!-- Netzbezug: viel = schlecht (grün -> gelb -> rot) -->
+      <linearGradient id="g-bad-netz" gradientUnits="userSpaceOnUse" x1="0" y1="578" x2="0" y2="326">
+        <stop offset="0" stop-color="#6fd17b"/><stop offset="0.5" stop-color="#f5c542"/><stop offset="1" stop-color="#e85b5b"/>
+      </linearGradient>
+
+      <!-- PV-Verlauf: rote Kurve aus dem Chart-Bild herauslösen (Alpha = Rotanteil), Fläche nach unten auffüllen, neu einfärben -->
+      <filter id="pv-area" filterUnits="userSpaceOnUse" x="0" y="46" width="400" height="100" color-interpolation-filters="sRGB">
+        <feColorMatrix in="SourceGraphic" type="matrix"
+                       values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 -1 0 0 0" result="line"/>
+        <!-- Linie verdünnen (nur die Linie, nicht die Fläche): radius 0.3 bis 0.6, größer = dünner -->
+        <feMorphology in="line" operator="erode" radius="0.2" result="thin"/>
+        <!-- Fläche: Kurve schrittweise nach unten verdoppeln (1+2+4+...+64 = 127 Einheiten) -->
+        <feComponentTransfer in="line" result="lineA"><feFuncA type="linear" slope="4"/></feComponentTransfer>
+        <feOffset in="lineA" dy="1" result="o1"/> <feMerge result="e1"><feMergeNode in="lineA"/><feMergeNode in="o1"/></feMerge>
+        <feOffset in="e1" dy="2" result="o2"/>   <feMerge result="e2"><feMergeNode in="e1"/><feMergeNode in="o2"/></feMerge>
+        <feOffset in="e2" dy="4" result="o3"/>   <feMerge result="e3"><feMergeNode in="e2"/><feMergeNode in="o3"/></feMerge>
+        <feOffset in="e3" dy="8" result="o4"/>   <feMerge result="e4"><feMergeNode in="e3"/><feMergeNode in="o4"/></feMerge>
+        <feOffset in="e4" dy="16" result="o5"/>  <feMerge result="e5"><feMergeNode in="e4"/><feMergeNode in="o5"/></feMerge>
+        <feOffset in="e5" dy="32" result="o6"/>  <feMerge result="e6"><feMergeNode in="e5"/><feMergeNode in="o6"/></feMerge>
+        <feOffset in="e6" dy="64" result="o7"/>  <feMerge result="area"><feMergeNode in="e6"/><feMergeNode in="o7"/></feMerge>
+        <feFlood class="pv-area-fill" result="cf"/>
+        <feComposite in="cf" in2="area" operator="in" result="fill"/>
+        <feFlood class="pv-area-line" result="cl"/>
+        <feComposite in="cl" in2="thin" operator="in" result="stroke"/>
+        <feMerge><feMergeNode in="fill"/><feMergeNode in="stroke"/></feMerge>
+      </filter>
+      <!-- Netz-Verlauf: gleicher Filter, eigener Bereich und eigene Farben -->
+      <filter id="grid-area" filterUnits="userSpaceOnUse" x="206" y="462" width="194" height="118" color-interpolation-filters="sRGB">
+        <feColorMatrix in="SourceGraphic" type="matrix"
+                       values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  1 -1 0 0 0" result="line"/>
+        <!-- Linie verdünnen (nur die Linie, nicht die Fläche): radius 0.3 bis 0.6, größer = dünner -->
+        <feMorphology in="line" operator="erode" radius="0.2" result="thin"/>
+        <!-- Fläche: Kurve schrittweise nach unten verdoppeln (1+2+4+...+64 = 127 Einheiten) -->
+        <feComponentTransfer in="line" result="lineA"><feFuncA type="linear" slope="4"/></feComponentTransfer>
+        <feOffset in="lineA" dy="1" result="o1"/> <feMerge result="e1"><feMergeNode in="lineA"/><feMergeNode in="o1"/></feMerge>
+        <feOffset in="e1" dy="2" result="o2"/>   <feMerge result="e2"><feMergeNode in="e1"/><feMergeNode in="o2"/></feMerge>
+        <feOffset in="e2" dy="4" result="o3"/>   <feMerge result="e3"><feMergeNode in="e2"/><feMergeNode in="o3"/></feMerge>
+        <feOffset in="e3" dy="8" result="o4"/>   <feMerge result="e4"><feMergeNode in="e3"/><feMergeNode in="o4"/></feMerge>
+        <feOffset in="e4" dy="16" result="o5"/>  <feMerge result="e5"><feMergeNode in="e4"/><feMergeNode in="o5"/></feMerge>
+        <feOffset in="e5" dy="32" result="o6"/>  <feMerge result="e6"><feMergeNode in="e5"/><feMergeNode in="o6"/></feMerge>
+        <feOffset in="e6" dy="64" result="o7"/>  <feMerge result="area"><feMergeNode in="e6"/><feMergeNode in="o7"/></feMerge>
+        <feFlood class="grid-area-fill" result="cf"/>
+        <feComposite in="cf" in2="area" operator="in" result="fill"/>
+        <feFlood class="grid-area-line" result="cl"/>
+        <feComposite in="cl" in2="thin" operator="in" result="stroke"/>
+        <feMerge><feMergeNode in="fill"/><feMergeNode in="stroke"/></feMerge>
+      </filter>
+    </defs>
+
+    <!-- ===================== PV ===================== -->
+    <rect x="4" y="6" width="392" height="138" rx="16" class="card"/>
+    <!-- Füllstand-Hintergrund (clip-pv) -->
+    <g ng-repeat="L in [((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > pvMaxW ? 1 : (((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > 0 ? ((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) / pvMaxW : 0)] track by $index">
+      <clipPath id="clip-pv"><rect x="0" width="400" ng-attr-y="{{144 - 138 * L}}" ng-attr-height="{{138 * L + 3}}"/></clipPath>
+      <rect x="4" y="6" width="392" height="138" rx="16" class="frame frame-pv" ng-if="L > 0"/>
+    </g>
+
+
+    <!-- PV-Verlauf der letzten 24 h als Bild vom openHAB-Chart-Dienst (rrd4j).
+         Das Bild ist größer als die Kachel und verschoben, damit Achsen und Beschriftung abgeschnitten sind.
+         t=... lädt das Bild neu, sobald sich der Tagesertrag ändert. -->
+    <clipPath id="clip-pvchart-card"><rect x="4" y="6" width="392" height="138" rx="16"/></clipPath>
+    <clipPath id="clip-pvchart-area"><rect x="0" y="52" width="400" height="100"/></clipPath>
+    <g class="pv-chart-clip-card" ng-if="!hideC">
+      <g class="pv-chart-clip-area">
+        <image class="pv-chart" x="-28.0" y="47.8" width="439.4" height="106.9" preserveAspectRatio="none"
+               ng-attr-href="/chart?items={{config.pvPower}}&period={{config.chartPeriod}}&service=rrd4j&w=800&h=240&legend=false&t={{itemValue(config.pvYieldToday)}}"/>
+      </g>
+    </g>
+
+    <g stroke-width="3" stroke-linecap="round"
+       ng-class="{'sun-on': ((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > 0,
+                  'sun-off': ((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) <= 0}">
+      <circle cx="39" cy="56" r="13"/>
+      <line x1="39" y1="34" x2="39" y2="40"/>
+      <line x1="39" y1="72" x2="39" y2="78"/>
+      <line x1="17" y1="56" x2="23" y2="56"/>
+      <line x1="55" y1="56" x2="61" y2="56"/>
+      <line x1="24" y1="41" x2="28" y2="45"/>
+      <line x1="50" y1="67" x2="54" y2="71"/>
+      <line x1="54" y1="41" x2="50" y2="45"/>
+      <line x1="28" y1="67" x2="24" y2="71"/>
+    </g>
+
+    <text x="200" y="32" class="title">{{en ? 'Photovoltaics' : 'Photovoltaik'}}</text>
+
+    <text x="200" y="80" class="big"
+          ng-class="((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > 0 ? 'c-charge' : 'c-neutral'">
+      {{((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) | number:0}}<tspan class="unit" dx="6">W</tspan>
+    </text>
+
+    <text x="105" y="106" class="label">{{en ? 'Today' : 'Heute'}}</text>
+    <!-- pvYieldToday kommt in Wh: unter 1000 Wh als Wh, ab 1000 Wh als kWh -->
+    <text x="105" y="132" class="small c-charge"
+          ng-if="((+(itemValue(config.pvYieldToday) + '').split(' ')[0] || 0) * ((itemValue(config.pvYieldToday) + '').split(' ')[1] == 'kWh' ? 1000 : 1)) < 1000">
+      {{((+(itemValue(config.pvYieldToday) + '').split(' ')[0] || 0) * ((itemValue(config.pvYieldToday) + '').split(' ')[1] == 'kWh' ? 1000 : 1)) | number:0}}<tspan class="unit" dx="4">Wh</tspan>
+    </text>
+    <text x="105" y="132" class="small c-charge"
+          ng-if="((+(itemValue(config.pvYieldToday) + '').split(' ')[0] || 0) * ((itemValue(config.pvYieldToday) + '').split(' ')[1] == 'kWh' ? 1000 : 1)) >= 1000">
+      {{(((+(itemValue(config.pvYieldToday) + '').split(' ')[0] || 0) * ((itemValue(config.pvYieldToday) + '').split(' ')[1] == 'kWh' ? 1000 : 1)) / 1000) | number:2}}<tspan class="unit" dx="4">kWh</tspan>
+    </text>
+
+    <text x="295" y="106" class="label">{{en ? 'Yesterday' : 'Gestern'}}</text>
+    <!-- pvYieldYesterday kommt in kWh: unter 1 kWh als Wh, sonst kWh -->
+    <text x="295" y="132" class="small c-pv"
+          ng-if="((+(itemValue(config.pvYieldYesterday) + '').split(' ')[0] || 0) * ((itemValue(config.pvYieldYesterday) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.pvYieldYesterday) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) < 1">
+      {{(((+(itemValue(config.pvYieldYesterday) + '').split(' ')[0] || 0) * ((itemValue(config.pvYieldYesterday) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.pvYieldYesterday) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) * 1000) | number:0}}<tspan class="unit" dx="4">Wh</tspan>
+    </text>
+    <text x="295" y="132" class="small c-pv"
+          ng-if="((+(itemValue(config.pvYieldYesterday) + '').split(' ')[0] || 0) * ((itemValue(config.pvYieldYesterday) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.pvYieldYesterday) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) >= 1">
+      {{((+(itemValue(config.pvYieldYesterday) + '').split(' ')[0] || 0) * ((itemValue(config.pvYieldYesterday) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.pvYieldYesterday) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:2}}<tspan class="unit" dx="4">kWh</tspan>
+    </text>
+
+
+    <!-- ===================== HAUS (Hub) ===================== -->
+    <rect x="4" y="164" width="392" height="142" rx="16" class="card"/>
+
+    <!-- Haus-Symbol: kompakt und auf die Symbolgröße von Akku/Netz abgestimmt -->
+    <g class="energy-icon energy-icon-house" aria-hidden="true">
+      <path d="M20 193 L35 180 L50 193 V208 H20 Z"/>
+      <path d="M17 193 L35 177 L53 193"/>
+      <path d="M30 208 V198 H40 V208"/>
+    </g>
+
+    <text x="200" y="190" class="title">{{en ? 'Consumption' : 'Gesamtverbrauch'}}</text>
+
+    <text x="200" y="242" class="big c-house">
+      {{(((+(itemValue(config.pvPower) + '').split(' ')[0] || 0) * ((itemValue(config.pvPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) +
+         ((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) -
+         ((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1))) | number:0}}<tspan class="unit" dx="6">W</tspan>
+    </text>
+
+    <text x="105" y="268" class="label">{{en ? 'Today' : 'Heute'}}</text>
+    <text x="105" y="294" class="small c-house">
+      {{((+(itemValue(config.loadToday) + '').split(' ')[0] || 0) * ((itemValue(config.loadToday) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.loadToday) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:2}}<tspan class="unit" dx="4">kWh</tspan>
+    </text>
+
+    <text x="295" y="268" class="label">{{en ? 'Yesterday' : 'Gestern'}}</text>
+    <text x="295" y="294" class="small c-house yday">
+      {{((+(itemValue(config.loadYesterday) + '').split(' ')[0] || 0) * ((itemValue(config.loadYesterday) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.loadYesterday) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:2}}<tspan class="unit" dx="4">kWh</tspan>
+    </text>
+
+
+    <!-- ===================== AKKU ===================== -->
+    <rect x="4" y="326" width="186" height="252" rx="16" class="card"/>
+    <!-- Füllstand-Hintergrund (clip-akku) -->
+    <g ng-repeat="L in [(+(itemValue(config.battSoc) + '').split(' ')[0] || 0) > 100 ? 1 : ((+(itemValue(config.battSoc) + '').split(' ')[0] || 0) > 0 ? (+(itemValue(config.battSoc) + '').split(' ')[0] || 0) / 100 : 0)] track by $index">
+      <clipPath id="clip-akku"><rect x="0" width="400" ng-attr-y="{{578 - 252 * L}}" ng-attr-height="{{252 * L + 3}}"/></clipPath>
+      <rect x="4" y="326" width="186" height="252" rx="16" class="frame frame-akku" ng-if="L > 0"/>
+    </g>
+
+
+    <g ng-class="{'nodata': itemValue(config.battSoc) == 'NULL' || itemValue(config.battSoc) == 'UNDEF'}">
+
+      <!-- Akku-Symbol: gleiche optische Größe wie Haus und Netz -->
+      <g class="energy-icon energy-icon-battery" aria-hidden="true">
+        <rect x="25" y="339" width="20" height="29" rx="3"/>
+        <rect x="31" y="335" width="8" height="5" rx="1.5"/>
+        <rect x="29" y="354" width="12" height="10" rx="1" fill="var(--batt-charge)" stroke="none"/>
+      </g>
+
+      <text x="97" y="352" class="title">{{en ? 'BATTERY' : 'AKKU'}}</text>
+
+      <circle cx="97" cy="410" r="45" class="soc-ring-bg"/>
+      <circle cx="97" cy="410" r="45" class="soc-ring"
+              ng-attr-stroke="{{(+(itemValue(config.battSoc) + '').split(' ')[0] || 0) < ((+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) > 0 ? (+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) + 5 : 20) ? '#e85b5b' :
+                               ((+(itemValue(config.battSoc) + '').split(' ')[0] || 0) < 50 ? '#f5c542' : '#6fd17b')}}"
+              ng-attr-stroke-dasharray="{{282.74 * ((+(itemValue(config.battSoc) + '').split(' ')[0] || 0) / 100)}} 282.74"/>
+
+      <!-- Min-SoC: Strich am Ring (Winkel = Prozent × 3,6° ab 12 Uhr, im Uhrzeigersinn) -->
+      <line x1="97" y1="358" x2="97" y2="371" class="soc-min-tick"
+            ng-if="(+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) > 0"
+            ng-attr-transform="rotate({{(+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) * 3.6}} 97 410)"/>
+
+      <text x="97" y="420" class="small c-white">{{(+(itemValue(config.battSoc) + '').split(' ')[0] || 0) | number:0}}%</text>
+
+      <!-- Min-SoC anzeigen und per +/- ändern (Schritt/Grenzen: socStep, socMinAllowed, socMaxAllowed am Widget-Anfang) -->
+      <text x="97" y="476" class="label"
+            ng-if="(+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) > 0">Min. SoC <tspan class="label-val">{{(+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) | number:0}}%</tspan></text>
+      <text x="97" y="476" class="label"
+            ng-if="(+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) <= 0">Min. SoC <tspan class="label-val">–</tspan></text>
+
+      <g class="soc-btn"
+         ng-click="sendCmd(config.minSocLimit, ((+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) - socStep < socMinAllowed ? socMinAllowed : (+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) - socStep) + ((itemValue(config.minSocLimit) + '').split(' ')[1] ? ' ' + (itemValue(config.minSocLimit) + '').split(' ')[1] : ''))">
+        <circle cx="24" cy="471" r="19" class="btn-hit"/>
+        <circle cx="24" cy="471" r="12" class="btn-bg"/>
+        <text x="24" y="478" class="btn-sign">−</text>
+      </g>
+
+      <g class="soc-btn"
+         ng-click="sendCmd(config.minSocLimit, ((+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) + socStep > socMaxAllowed ? socMaxAllowed : (+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) + socStep) + ((itemValue(config.minSocLimit) + '').split(' ')[1] ? ' ' + (itemValue(config.minSocLimit) + '').split(' ')[1] : ''))">
+        <circle cx="170" cy="471" r="19" class="btn-hit"/>
+        <circle cx="170" cy="471" r="12" class="btn-bg"/>
+        <text x="170" y="478" class="btn-sign">+</text>
+      </g>
+
+      <!-- Restkapazität (Akku-Kapazität battCap in kWh): Ampel wie der Ring: rot bis Min-SoC + 5 % (ohne Min-Item: 20 %), gelb bis 50 % der Kapazität, sonst grün -->
+      <text x="97" y="504" class="small"
+            ng-class="{'c-red':    ((+(itemValue(config.battEnergy) + '').split(' ')[0] || 0) * ((itemValue(config.battEnergy) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.battEnergy) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) < (((+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) > 0 ? (+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) + 5 : 20) * (battCap / 100)),
+                       'c-yellow': ((+(itemValue(config.battEnergy) + '').split(' ')[0] || 0) * ((itemValue(config.battEnergy) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.battEnergy) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) >= (((+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) > 0 ? (+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) + 5 : 20) * (battCap / 100)) && ((+(itemValue(config.battEnergy) + '').split(' ')[0] || 0) * ((itemValue(config.battEnergy) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.battEnergy) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) < (battCap / 2),
+                       'c-charge': ((+(itemValue(config.battEnergy) + '').split(' ')[0] || 0) * ((itemValue(config.battEnergy) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.battEnergy) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) >= (((+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) > 0 ? (+(itemValue(config.minSocLimit) + '').split(' ')[0] || 0) + 5 : 20) * (battCap / 100)) && ((+(itemValue(config.battEnergy) + '').split(' ')[0] || 0) * ((itemValue(config.battEnergy) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.battEnergy) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) >= (battCap / 2)}">
+        {{((+(itemValue(config.battEnergy) + '').split(' ')[0] || 0) * ((itemValue(config.battEnergy) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.battEnergy) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:2}}<tspan class="unit" dx="4">kWh</tspan>
+      </text>
+
+      <!-- Leistung -->
+      <text x="97" y="538" class="mid"
+            ng-class="{'c-neutral': ((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) == 0,
+                       'c-charge':  ((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > 0,
+                       'c-disch':   ((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < 0}">
+        {{((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) | number:0}}<tspan class="unit" dx="4">W</tspan>
+      </text>
+
+      <!-- Status -->
+      <text x="97" y="562" class="label c-neutral"
+            ng-if="itemValue(config.battPower) == 'NULL' || itemValue(config.battPower) == 'UNDEF'">{{en ? 'NO DATA' : 'KEINE DATEN'}}</text>
+      <text x="97" y="562" class="label c-charge"
+            ng-if="((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > 0">{{en ? 'Charging' : 'Laden'}}</text>
+      <text x="97" y="562" class="label c-disch"
+            ng-if="((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < 0">{{en ? 'Discharging' : 'Entladen'}}</text>
+      <text x="97" y="562" class="label c-neutral"
+            ng-if="((+(itemValue(config.battPower) + '').split(' ')[0] || 0) * ((itemValue(config.battPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) == 0 &&
+                   itemValue(config.battPower) != 'NULL' && itemValue(config.battPower) != 'UNDEF'">{{en ? 'Idle' : 'Idle'}}</text>
+    </g>
+
+
+    <!-- ===================== NETZ ===================== -->
+    <rect x="210" y="326" width="186" height="252" rx="16" class="card"/>
+    <!-- Füllstand-Hintergrund (clip-netz-in) -->
+    <g ng-repeat="L in [((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > gridMaxW ? 1 : (((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > 0 ? ((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) / gridMaxW : 0)] track by $index">
+      <clipPath id="clip-netz-in"><rect x="0" width="400" ng-attr-y="{{578 - 252 * L}}" ng-attr-height="{{252 * L + 3}}"/></clipPath>
+      <rect x="210" y="326" width="186" height="252" rx="16" class="frame frame-netz-in" ng-if="L > 0"/>
+    </g>
+
+    <!-- Füllstand-Hintergrund (clip-netz-out) -->
+    <g ng-repeat="L in [-((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > pvMaxW ? 1 : (((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < 0 ? -((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) / pvMaxW : 0)] track by $index">
+      <clipPath id="clip-netz-out"><rect x="0" width="400" ng-attr-y="{{578 - 252 * L}}" ng-attr-height="{{252 * L + 3}}"/></clipPath>
+      <rect x="210" y="326" width="186" height="252" rx="16" class="frame frame-netz-out" ng-if="L > 0"/>
+    </g>
+
+
+    <!-- Netz-Verlauf der letzten 24 h als Bild vom openHAB-Chart-Dienst (rrd4j), wie bei der PV-Kachel.
+         Positive Werte = Bezug, negative = Einspeisung. t=... lädt das Bild neu, wenn sich Tageswerte ändern. -->
+    <clipPath id="clip-gridchart-card"><rect x="210" y="326" width="186" height="252" rx="16"/></clipPath>
+    <g class="grid-chart-clip-card" ng-if="!hideGC">
+      <image class="grid-chart" x="193.6" y="465.4" width="210.8" height="125.1" preserveAspectRatio="none"
+             ng-attr-href="/chart?items={{config.gridPower}}&period={{config.gridChartPeriod || config.chartPeriod}}&service=rrd4j&w=800&h=240&legend=false&t={{itemValue(config.gridImportToday)}}-{{itemValue(config.pvYieldToday)}}"/>
+    </g>
+
+    <!-- Netz-Symbol: kompakter Netz-/Mastkörper, optisch auf Akku abgestimmt -->
+    <g class="energy-icon energy-icon-grid" aria-hidden="true">
+      <path d="M238 337 L228 368 H248 Z"/>
+      <path d="M232 356 H244 M230 348 H246 M238 337 V332 M233 334 H243"/>
+      <path d="M232 356 L228 368 M244 356 L248 368"/>
+    </g>
+
+    <text x="303" y="352" class="title">{{en ? 'GRID' : 'NETZ'}}</text>
+
+    <text x="303" y="398" class="mid"
+          ng-class="{'c-in':  ((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > 0,
+                     'c-out': ((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < 0,
+                     'c-white': ((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) == 0}">
+      {{((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) | number:0}}<tspan class="unit" dx="4">W</tspan>
+    </text>
+
+    <text x="303" y="422" class="label"
+          ng-if="((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) > 0">{{en ? 'Import' : 'Bezug'}}</text>
+    <text x="303" y="422" class="label"
+          ng-if="((+(itemValue(config.gridPower) + '').split(' ')[0] || 0) * ((itemValue(config.gridPower) + '').split(' ')[1] == 'kW' ? 1000 : 1)) < 0">{{en ? 'Export' : 'Einspeisung'}}</text>
+
+    <text x="303" y="460" class="label">{{en ? 'Today' : 'Heute'}}</text>
+    <text x="303" y="486" class="small c-in">
+      {{((+(itemValue(config.gridImportToday) + '').split(' ')[0] || 0) * ((itemValue(config.gridImportToday) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.gridImportToday) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:2}}<tspan class="unit" dx="4">kWh</tspan>
+    </text>
+
+    <text x="303" y="514" class="label">{{en ? 'Yesterday' : 'Gestern'}}</text>
+    <text x="303" y="540" class="small c-in yday">
+      {{((+(itemValue(config.gridImportYesterday) + '').split(' ')[0] || 0) * ((itemValue(config.gridImportYesterday) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.gridImportYesterday) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:2}}<tspan class="unit" dx="4">kWh</tspan>
+    </text>
+
+
+    <!-- Monat: per Einstellung hideMonth ausblendbar -->
+    <g ng-if="!hideM">
+    <!-- ===================== MONAT ===================== -->
+    <rect x="4" y="598" width="392" height="236" rx="16" class="card"/>
+
+    <text x="20" y="626" class="title start">{{en ? 'Month' : 'Monat'}}</text>
+    <text x="215" y="626" class="label end">{{en ? 'Current' : 'Aktuell'}}</text>
+    <text x="363" y="626" class="label end">{{en ? 'Last' : 'Letzter'}}</text>
+
+    <line x1="20" y1="636" x2="380" y2="636" class="divider"/>
+
+    <!-- Gesamt -->
+    <text x="20" y="670" class="label start">{{en ? 'Total' : 'Gesamt'}}</text>
+    <text x="215" y="670" class="small c-house end">{{((+(itemValue(config.loadMonth) + '').split(' ')[0] || 0) * ((itemValue(config.loadMonth) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.loadMonth) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:2}}</text><text x="218" y="670" class="unit-col start">kWh</text>
+    <text x="363" y="670" class="small c-house end yday month-last">{{((+(itemValue(config.loadMonthLast) + '').split(' ')[0] || 0) * ((itemValue(config.loadMonthLast) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.loadMonthLast) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:2}}</text><text x="366" y="670" class="unit-col unit-col-last start yday">kWh</text>
+
+    <!-- PV -->
+    <text x="20" y="710" class="label start">{{en ? 'PV yield' : 'PV Ertrag'}}</text>
+    <text x="215" y="710" class="small c-charge end">{{((+(itemValue(config.pvYieldMonth) + '').split(' ')[0] || 0) * ((itemValue(config.pvYieldMonth) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.pvYieldMonth) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:2}}</text><text x="218" y="710" class="unit-col start">kWh</text>
+    <text x="363" y="710" class="small c-charge end yday month-last">{{((+(itemValue(config.pvYieldMonthLast) + '').split(' ')[0] || 0) * ((itemValue(config.pvYieldMonthLast) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.pvYieldMonthLast) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:2}}</text><text x="366" y="710" class="unit-col unit-col-last start yday">kWh</text>
+
+    <!-- Netz -->
+    <text x="20" y="750" class="label start">{{en ? 'Grid import' : 'Netzbezug'}}</text>
+    <text x="215" y="750" class="small c-in end">{{((+(itemValue(config.gridImportMonth) + '').split(' ')[0] || 0) * ((itemValue(config.gridImportMonth) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.gridImportMonth) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:2}}</text><text x="218" y="750" class="unit-col start">kWh</text>
+    <text x="363" y="750" class="small c-in end yday month-last">{{((+(itemValue(config.gridImportMonthLast) + '').split(' ')[0] || 0) * ((itemValue(config.gridImportMonthLast) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.gridImportMonthLast) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:2}}</text><text x="366" y="750" class="unit-col unit-col-last start yday">kWh</text>
+
+    <!-- PV-Anteil am Gesamtverbrauch im Monat (Einstellung pvShareMonth, in %) mit Balken -->
+    <line x1="20" y1="768" x2="380" y2="768" class="divider"/>
+
+    <text x="20" y="798" class="label start">{{en ? 'PV share of consumption' : 'PV-Anteil am Verbrauch'}}</text>
+    <text x="386" y="798" class="small c-charge end">{{(+(itemValue(config.pvShareMonth) + '').split(' ')[0] || 0) | number:2}}<tspan class="unit" dx="3">%</tspan></text>
+
+    <rect x="20" y="810" width="360" height="8" rx="4" class="bar-bg"/>
+    <rect x="20" y="810" height="8" rx="4" class="bar-fill"
+          ng-attr-width="{{360 * ((+(itemValue(config.pvShareMonth) + '').split(' ')[0] || 0) > 100 ? 100 : (+(itemValue(config.pvShareMonth) + '').split(' ')[0] || 0)) / 100}}"/>
+    </g>
+
+    <!-- Jahr: per Einstellung hideYear ausblendbar; rückt nach oben, wenn Monat fehlt -->
+    <g ng-if="!hideY" ng-attr-transform="translate(0, {{hideM ? -256 : 0}})">
+    <!-- ===================== JAHR ===================== -->
+    <rect x="4" y="854" width="392" height="266" rx="16" class="card"/>
+
+    <text x="20" y="882" class="title start">{{en ? 'Year' : 'Jahr'}}</text>
+    <text x="215" y="882" class="label end">{{en ? 'Current' : 'Aktuell'}}</text>
+    <text x="363" y="882" class="label end">{{en ? 'Last' : 'Letztes'}}</text>
+
+    <line x1="20" y1="892" x2="380" y2="892" class="divider"/>
+
+    <text x="20" y="922" class="label start">{{en ? 'Total' : 'Gesamt'}}</text>
+    <text x="215" y="922" class="small c-house end">{{((+(itemValue(config.loadYear) + '').split(' ')[0] || 0) * ((itemValue(config.loadYear) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.loadYear) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:0}}</text><text x="218" y="922" class="unit-col start">kWh</text>
+    <text x="363" y="922" class="small c-house end yday month-last">{{((+(itemValue(config.loadYearLast) + '').split(' ')[0] || 0) * ((itemValue(config.loadYearLast) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.loadYearLast) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:0}}</text><text x="366" y="922" class="unit-col unit-col-last start yday">kWh</text>
+    <text x="20" y="960" class="label start">{{en ? 'PV yield' : 'PV Ertrag'}}</text>
+    <text x="215" y="960" class="small c-charge end">{{((+(itemValue(config.pvYieldYear) + '').split(' ')[0] || 0) * ((itemValue(config.pvYieldYear) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.pvYieldYear) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:0}}</text><text x="218" y="960" class="unit-col start">kWh</text>
+    <text x="363" y="960" class="small c-charge end yday month-last">{{((+(itemValue(config.pvYieldYearLast) + '').split(' ')[0] || 0) * ((itemValue(config.pvYieldYearLast) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.pvYieldYearLast) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:0}}</text><text x="366" y="960" class="unit-col unit-col-last start yday">kWh</text>
+    <text x="20" y="998" class="label start">{{en ? 'Grid import' : 'Netzbezug'}}</text>
+    <text x="215" y="998" class="small c-in end">{{((+(itemValue(config.gridImportYear) + '').split(' ')[0] || 0) * ((itemValue(config.gridImportYear) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.gridImportYear) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:0}}</text><text x="218" y="998" class="unit-col start">kWh</text>
+    <text x="363" y="998" class="small c-in end yday month-last">{{((+(itemValue(config.gridImportYearLast) + '').split(' ')[0] || 0) * ((itemValue(config.gridImportYearLast) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.gridImportYearLast) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:0}}</text><text x="366" y="998" class="unit-col unit-col-last start yday">kWh</text>
+    <text x="20" y="1036" class="label start">{{en ? 'Export' : 'Einspeisung'}}</text>
+    <text x="215" y="1036" class="small c-out end">{{((+(itemValue(config.gridExportYear) + '').split(' ')[0] || 0) * ((itemValue(config.gridExportYear) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.gridExportYear) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:0}}</text><text x="218" y="1036" class="unit-col start">kWh</text>
+    <text x="363" y="1036" class="small c-out end yday month-last">{{((+(itemValue(config.gridExportYearLast) + '').split(' ')[0] || 0) * ((itemValue(config.gridExportYearLast) + '').split(' ')[1] == 'Wh' ? 0.001 : ((itemValue(config.gridExportYearLast) + '').split(' ')[1] == 'MWh' ? 1000 : 1))) | number:0}}</text><text x="366" y="1036" class="unit-col unit-col-last start yday">kWh</text>
+
+    <!-- PV-Anteil am Gesamtverbrauch im Jahr (Einstellung pvShareYear, in %) mit Balken -->
+    <line x1="20" y1="1054" x2="380" y2="1054" class="divider"/>
+
+    <text x="20" y="1084" class="label start">{{en ? 'PV share of consumption' : 'PV-Anteil am Verbrauch'}}</text>
+    <text x="386" y="1084" class="small c-charge end">{{(+(itemValue(config.pvShareYear) + '').split(' ')[0] || 0) | number:2}}<tspan class="unit" dx="3">%</tspan></text>
+
+    <rect x="20" y="1096" width="360" height="8" rx="4" class="bar-bg"/>
+    <rect x="20" y="1096" height="8" rx="4" class="bar-fill"
+          ng-attr-width="{{360 * ((+(itemValue(config.pvShareYear) + '').split(' ')[0] || 0) > 100 ? 100 : (+(itemValue(config.pvShareYear) + '').split(' ')[0] || 0)) / 100}}"/>
+    </g>
+
+    </svg>
+
+  </div>
+
+</div>
