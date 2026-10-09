@@ -2,7 +2,7 @@
 
 A custom HABPanel widget that shows the current energy flows of a PV system with battery storage, optimised for smartphones in portrait mode (built and tested on a Pixel 9).
 
-![Screenshot](screenshots/pixel9.png)
+![Screenshot](screenshots/energy-flow-widget.gif)
 
 🇩🇪 [Deutsche Anleitung](README.de.md)
 
