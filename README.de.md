@@ -2,7 +2,8 @@
 
 Ein Custom-Widget für HABPanel, das die aktuellen Energieflüsse einer PV-Anlage mit Batteriespeicher zeigt. Es ist für Smartphones im Hochformat optimiert (entwickelt und getestet auf einem Pixel 9).
 
-![Screenshot](screenshots/pixel9.png)
+![Screenshot](screenshots/energy-flow-widget.gif)
+![Screenshot mit laufender PV](screenshots/energy-flow-widget2.gif)
 
 🇬🇧 [English version](README.md)
 
