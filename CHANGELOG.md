@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.5
+- New setting parseUnits: unit handling only when needed. With it off, far fewer evaluations per update (smoother on phones)
+
 ## v3.4
 - No delay when scrolling the dashboard: the widget no longer scrolls by itself (new setting scrollInside to re-enable)
 

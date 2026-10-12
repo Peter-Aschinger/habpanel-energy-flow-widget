@@ -2,8 +2,7 @@
 
 A custom HABPanel widget that shows the current energy flows of a PV system with battery storage, optimised for smartphones in portrait mode (built and tested on a Pixel 9).
 
-![Screenshot](screenshots/energy-flow-widget.gif)
-![Screenshot mit laufender PV](screenshots/energy-flow-widget2.gif)
+![Screenshot](screenshots/pixel9.png)
 
 🇩🇪 [Deutsche Anleitung](README.de.md)
 
@@ -82,6 +81,7 @@ A custom HABPanel widget that shows the current energy flows of a PV system with
 | `chartPeriod` | Text | Chart period: `h`, `4h`, `8h`, `12h`, `D` (default, 24 h), `3D`, `W` |
 | `gridChartPeriod` | Text | Period of the grid chart, empty = same as `chartPeriod` |
 | `language` | Text | `en` = English labels, anything else = German (default) |
+| `parseUnits` | Checkbox | Read items with units (e.g. "257 W", openHAB 3 and newer). Leave off for plain numbers – faster |
 | `scrollInside` | Checkbox | Let the widget scroll by itself. Only needed if the tile is smaller than the widget; otherwise make the tile tall enough and leave this off |
 
 ## Notes and limitations
@@ -90,11 +90,12 @@ A custom HABPanel widget that shows the current energy flows of a PV system with
 - **Chart scale:** The chart servlet scales automatically to the highest value, so short peaks compress the rest of the curve.
 - **Labels** are German by default. Set `language` to `en` for English labels.
 - **All items must be set** in the widget settings, the template contains no item names.
-- **Items with units** (e.g. `Number:Power` with "257 W") are supported. The unit is split off; W/kW and Wh/kWh/MWh are converted automatically. The +/- buttons send the minimum SoC with the item's unit (e.g. "40 %").
+- **Items with units** (e.g. `Number:Power` with "257 W") are supported when `parseUnits` is switched on. The unit is split off; W/kW and Wh/kWh/MWh are converted automatically. The +/- buttons send the minimum SoC with the item's unit (e.g. "40 %").
 - **Flow arrows** are tied to the positions of the PV, house, battery and grid tiles, so these tiles cannot be hidden.
 
 ## Changelog
 
+- **v3.5** – New setting `parseUnits` (unit handling only when needed, faster)
 - **v3.4** – No scroll delay; new setting `scrollInside`
 - **v3.3** – Smoother scrolling on smartphones
 - **v3.2** – Number settings show their default values in the HABPanel settings dialog

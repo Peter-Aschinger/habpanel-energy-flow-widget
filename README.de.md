@@ -2,8 +2,7 @@
 
 Ein Custom-Widget für HABPanel, das die aktuellen Energieflüsse einer PV-Anlage mit Batteriespeicher zeigt. Es ist für Smartphones im Hochformat optimiert (entwickelt und getestet auf einem Pixel 9).
 
-![Screenshot](screenshots/energy-flow-widget.gif)
-![Screenshot mit laufender PV](screenshots/energy-flow-widget2.gif)
+![Screenshot](screenshots/pixel9.png)
 
 🇬🇧 [English version](README.md)
 
@@ -83,6 +82,7 @@ Ein Custom-Widget für HABPanel, das die aktuellen Energieflüsse einer PV-Anlag
 | `chartPeriod` | Text | Zeitraum der Verläufe: `h`, `4h`, `8h`, `12h`, `D` (Standard, 24 h), `3D`, `W` |
 | `gridChartPeriod` | Text | Zeitraum des Netz-Verlaufs, leer = wie `chartPeriod` |
 | `language` | Text | `en` = englische Beschriftungen, sonst Deutsch (Standard) |
+| `parseUnits` | Checkbox | Items mit Einheiten auswerten (z. B. „257 W“, ab openHAB 3). Bei reinen Zahlen aus lassen – schneller |
 | `scrollInside` | Checkbox | Widget scrollt in sich selbst. Nur nötig, wenn die Kachel kleiner ist als das Widget; sonst die Kachel hoch genug ziehen und aus lassen |
 
 ## Hinweise und Grenzen
@@ -90,11 +90,12 @@ Ein Custom-Widget für HABPanel, das die aktuellen Energieflüsse einer PV-Anlag
 - **Verläufe:** Das Widget lädt das Bild von `/chart?...` und schneidet die Achsen ab. Der Ausschnitt ist auf das Standard-Layout des Chart-Dienstes abgestimmt. Bei stark abweichenden Wertebereichen (z. B. lange Achsenbeschriftung wie `-1.000`) kann sich die Kurve am linken Rand leicht verschieben.
 - **Skalierung der Verläufe:** Der Chart-Dienst skaliert automatisch auf den höchsten Wert. Kurze Spitzen drücken dadurch den Rest der Kurve zusammen.
 - **Alle Items müssen gesetzt sein:** Im Template stehen keine Item-Namen. Fehlt eine Einstellung, bleibt die Stelle leer.
-- **Items mit Einheiten** (z. B. `Number:Power` mit „257 W“) werden unterstützt. Die Einheit wird abgetrennt, W/kW und Wh/kWh/MWh werden automatisch umgerechnet. Die +/- Knöpfe senden den Mindest-SoC mit der Einheit des Items (z. B. „40 %“).
+- **Items mit Einheiten** (z. B. `Number:Power` mit „257 W“) werden unterstützt, wenn `parseUnits` eingeschaltet ist. Die Einheit wird abgetrennt, W/kW und Wh/kWh/MWh werden automatisch umgerechnet. Die +/- Knöpfe senden den Mindest-SoC mit der Einheit des Items (z. B. „40 %“).
 - **Flow-Pfeile** sind an die Positionen der Kacheln PV, Haus, Akku und Netz gebunden. Diese Kacheln lassen sich deshalb nicht ausblenden.
 
 ## Änderungen
 
+- **v3.5** – Neue Einstellung `parseUnits` (Einheiten nur bei Bedarf auswerten, schneller)
 - **v3.4** – Keine Verzögerung beim Scrollen; neue Einstellung `scrollInside`
 - **v3.3** – Flüssigeres Scrollen auf dem Smartphone
 - **v3.2** – Zahlen-Einstellungen zeigen ihre Standardwerte im HABPanel-Einstellungsdialog
